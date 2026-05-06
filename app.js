@@ -1,126 +1,211 @@
-// Importação de Libs
 const express = require('express');
+const session = require('express-session');
+const cors = require('cors');
 const path = require('path');
-const http = require("http");
-const WebSocket = require("ws");
+const db = require("./src/config/sqlite3");
+const app = express()
 
-const Login = require("./src/routes/login");
-const Register = require("./src/routes/signup");
 const Agent = require("./src/routes/agent");
 const ContextExtractor = require("./src/routes/contex");
 
 
-const ultrassonicData = require("./src/routes/ultrassonicData");
-const cors = require("cors");
-
-
-// Configuração do servidor
-const app = express();
-const PORT = 3000;
-app.use(cors());
-
-let dataSession = {};
-let parkingData = {};
-
-// Conjunto para armazenar clientes WebSocket conectados
-const clients = new Set();
-
-// Função para calcular e enviar resumo para todos os clientes
-function broadcastSummary() {
-  let summary = { ocuped: 0, free: 0, total: 0 };
-  for (let key in parkingData) {
-    if (parkingData[key] === "ocupada") summary.ocuped++;
-    if (parkingData[key] === "livre") summary.free++;
-    summary.total++;
-  }
-  const message = JSON.stringify(summary);
-  clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
-}
-
-// Middlewares
-app.use(express.static(path.join(__dirname, 'public')));
+// --- MIDDLEWARES ---
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Rotas HTTP normais
-app.post('/user/login', Login);
-app.post('/user/register', Register);
-app.post("/user/ultrassonicdata", (req, res) => ultrassonicData(req, res, parkingData, broadcastSummary));
-app.post("/ask", Agent);
-app.post("/ask/context", ContextExtractor);
+app.use(express.static(path.join(__dirname, 'public')));
 
 
-// Rota da sessão
-app.post("/app/initsession/", (req, res) => {
-  // Atualiza o estado da sessão com os dados recebidos
-  dataSession = req.body;
-  console.log("Estado de sessão iniciado: ", dataSession);
+app.use(cors({
+  origin: "*", // ajuste para a porta do seu frontend
+  credentials: true
+}));
 
-  res.json({ message: "Sessão iniciada com sucesso", session: dataSession });
-});
+// ⚠️ Configuração correta da sessão
+app.use(session({
+  secret: '******', // troque por um segredo forte
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: false, // true apenas em produção com HTTPS
+    maxAge: 1000 * 60 * 60 // 1 hora
+  }
+}));
 
-app.get("/app/statussession", (req, res) => {
-  if (dataSession && Object.keys(dataSession).length > 0) {
-    res.json(dataSession);
-  } else {
-    res.status(404).json({ message: "Nenhuma sessão ativa" });
+let user = null;
+let parkData = {
+  "free": 3,
+  "ocupped": 0,
+  "total": 0
+}
+
+// --- FUNÇÃO DE VALIDAÇÃO ---
+function Validate(el) {
+  return el && el.trim() !== "";
+}
+
+// --- LOGIN ---
+app.post("/auth/login", (req, res) => {
+  const { email, password } = req.body;
+
+  console.log("Tentando login:", req.body);
+
+  if (!Validate(email) || !Validate(password)) {
+    return res.status(400).json({ success: false, message: "Email e senha são obrigatórios!" });
   }
 
-  console.log("Rota Acessada! ");
-});
+  const sql = "SELECT * FROM users WHERE email = ? AND password = ?";
+  db.get(sql, [email, password], (err, row) => {
+    if (err) {
+      console.error("Erro no banco:", err);
+      return res.status(500).json({ success: false, message: "Erro interno" });
+    }
 
+    if (row) {
+      console.log("Sessão iniciada ✅");
 
+      user = { id: row.id, name: row.name, email: row.email };
 
+      console.log("Sessão salva:", req.session.user);
 
-// Rota HTTP para resumo dos dados
-app.get("/user/parkingdata", (req, res) => {
-  let summary = { ocuped: 0, free: 0, total: 0 };
-
-  if (Object.keys(parkingData).length === 0) {
-    return res.status(404).json({ ocuped: null, free: null, total: null });
-  }
-
-  for (let key in parkingData) {
-    if (parkingData[key] === "ocupada") summary.ocuped++;
-    if (parkingData[key] === "livre") summary.free++;
-    summary.total++;
-  }
-
-  return res.json(summary);
-});
-
-// Cria servidor HTTP base
-const server = http.createServer(app);
-
-// Servidor WebSocket ligado ao mesmo servidor
-const wss = new WebSocket.Server({ server, path: "/user/parkingdata" });
-
-wss.on("connection", (ws) => {
-  console.log("Cliente conectado via WebSocket!");
-  clients.add(ws);
-
-  // Envia dados iniciais
-  ws.send(JSON.stringify(parkingData));
-
-  ws.on("close", () => {
-    console.log("Cliente desconectado.");
-    clients.delete(ws);
+      return res.json({
+        success: true,
+        message: "Sessão iniciada com sucesso!",
+        user: user,
+      });
+    } else {
+      console.log("Credenciais inválidas ❌");
+      return res.status(401).json({ success: false, message: "Email ou senha incorretos" });
+    }
   });
 });
 
-// Atualização periódica
-setInterval(broadcastSummary, 500);
+// --- REGISTRO ---
+app.post("/auth/register", (req, res) => {
+  const { name, email, password } = req.body;
 
-// Inicialização do servidor
-server.listen(PORT, () => {
-  console.log('Conectando', '.'.repeat(40));
-  console.log('•'.repeat(50));
-  console.log('Servidor Inicializado! ', '✓'.repeat(27));
-  console.log(`HTTP disponível em http://localhost:${PORT}/app.html`);
-  console.log(`WebSocket ativo em ws://localhost:${PORT}/user/parkingdata`);
-  console.log("Inicializando conexão com o Banco de dados SQLite3", ".".repeat(20));
+  if (!name || !email || !password) {
+    return res.status(400).json({ success: false, message: "Todos os campos são obrigatórios!" });
+  }
+
+  console.log(`Tentando criar conta para: ${email}`);
+
+  const checkUserSql = "SELECT * FROM users WHERE email = ?";
+  db.get(checkUserSql, [email], (err, row) => {
+    if (err) {
+      console.error("Erro na busca:", err);
+      return res.status(500).json({ success: false, message: "Erro no banco de dados" });
+    }
+
+    if (row) {
+      return res.status(400).json({ success: false, message: "Este e-mail já está em uso!" });
+    }
+
+    const insertSql = "INSERT INTO users (name, email, password) VALUES (?, ?, ?)";
+    db.run(insertSql, [name, email, password], function (err) {
+      if (err) {
+        console.error("Erro ao inserir:", err);
+        return res.status(500).json({ success: false, message: "Erro ao salvar usuário" });
+      }
+
+      console.log(`Usuário criado com ID: ${this.lastID}`);
+
+      return res.json({
+        success: true,
+        message: "Conta criada!",
+        user: { name, email, userId: this.lastID },
+      });
+    });
+  });
+});
+
+// --- CHECK SESSION ---
+app.get("/auth/check/", (req, res) => {
+  console.log("Verificando sessão...");
+  console.log("Sessão atual:", user);
+
+  if (user) {
+    return res.json({
+      success: true,
+      message: "Sessão iniciada",
+      user: user,
+    });
+  } else {
+    return res.json({
+      success: false,
+      message: "Nenhuma sessão ativa",
+      user: null,
+    });
+  }
+});
+
+// --- LOGOUT ---
+app.post("/auth/logout", (req, res) => {
+  try {
+    console.log("Sessão termininada! ");
+
+    user = null;
+    return res.json({
+      session: true,
+      message: "Sessão terminada! "
+    })
+  }
+  catch (e) {
+
+    console.log("Errro no sistema", e);
+    return res.json({
+      success: false,
+      message: `erro: ${e.message}`,
+    })
+  }
+});
+
+app.post("/assitent/ask", Agent);
+app.post("/assitent/assistent/ask/context", ContextExtractor);
+
+
+// --- ROTA DE RECEBIMENTO (VEM DO ESP32) ---
+app.post("/park/data/receiv", (req, res) => {
+  const { data } = req.body;
+
+  console.log("Dados brutos recebidos do ESP32:", req.body);
+
+  if (data) {
+
+    parkData = {
+      free: data.free,
+      ocupped: data.ocupped,
+      total: data.total
+    };
+
+    console.log("Dados recebidos do esp32:", parkData);
+
+    return res.status(200).json({ success: true, message: "Dados recebidos" });
+  } else {
+    console.log("Dados não encontrados no corpo da requisição ❌");
+    return res.status(400).json({ success: false, message: "Estrutura de dados inválida" });
+  }
+});
+
+
+app.post("/park/data/send", (req, res) => {
+ 
+  if (parkData && typeof parkData.free !== 'undefined') {
+    console.log("Enviando parkData para o Frontend:", parkData);
+    return res.json(parkData);
+  } else {
+    console.log("Dados de estacionamento ainda não disponíveis.");
+    return res.json({
+      "free": 0,
+      "ocupped": 0,
+      "total": 3
+    });
+  }
+});
+
+
+// --- SERVER ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT} \n http://localhost:${PORT}`);
 });

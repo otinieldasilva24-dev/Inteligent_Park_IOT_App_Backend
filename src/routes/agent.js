@@ -1,9 +1,7 @@
 const Groq = require("groq-sdk");
-import dotenv from "dotenv";
-dotenv.config();
 
 const client = new Groq({
-  apiKey: process.env.API_KEY_GROK_IA,
+  apiKey: "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",
 });
 
 async function Agent(req, res) {
@@ -18,7 +16,7 @@ async function Agent(req, res) {
           role: "system",
           content: `
           Você é o IPI IA, o assistente direto do Inteligent Park IOT.
-Criador: WOF (http://wofproject.netlify.app).
+Criador: WOF (https://wofproject.netlify.app).
 
 DETALHES DA WOF:
 Iniciativa focada em orientação técnica e desenvolvimento de projetos tecnológicos.
@@ -40,14 +38,15 @@ REGRAS CRÍTICAS DE RESPOSTA:
            3. Se pedirem código: Responda exatamente: "Não fui feito para codar, apenas para informar sobre o Inteligent Park IOT."
            4. Formatação de Listas: NUNCA enumere (1, 2, 3...). 
            5. Quebra de Linha: Sempre que houver uma lista ou múltiplos itens, use quebras de linha para organizar o texto.
+           6. Não use \n para quebrar 
           `
         },
         // Injeta o resumo do contexto antigo se ele existir
         ...(summary ? [{ role: "system", content: `RESUMO DA CONVERSA ANTERIOR: ${summary}` }] : []),
-        
+
         // Mensagens recentes (últimas 12) para manter o fluxo natural
         ...(history || []),
-        
+
         { role: "user", content: question }
       ],
       temperature: 0.7,
@@ -55,6 +54,7 @@ REGRAS CRÍTICAS DE RESPOSTA:
     });
 
     const answer = completion.choices[0]?.message?.content || "Não consegui responder.";
+
     res.json({ "answer": answer });
 
   } catch (err) {
