@@ -7,7 +7,7 @@
 
 // Configurações de Rede
 const char* ssid = "Assembly";
-const char* password = "Orieljoelcapitadasilva";
+const char* password = "";
 const char* apiBase = "http://192.168.8.84:3000";
 const String sendUrl = String(apiBase) + "/park/data/receiv";
 

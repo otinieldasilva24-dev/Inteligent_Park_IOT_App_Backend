@@ -7,7 +7,7 @@
 #include <ArduinoJson.h>
 
 const char *ssid = "Assembly";
-const char *password = "Orieljoelcapitadasilva";
+const char *password = "";
 const char *apiBase = "http://192.168.8.84:3000";
 
 // Corrigido: Para concatenar em tempo de execução, usamos String ou montamos no setup

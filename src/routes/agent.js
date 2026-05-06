@@ -1,7 +1,12 @@
 const Groq = require("groq-sdk");
+// 1. Corrigido: 'dotenv' (estava 'dovenv')
+const dotenv = require("dotenv"); 
+const Groq = require("groq-sdk"); // 2. Adicionado: Importação da biblioteca
+
+dotenv.config(); // Carrega as variáveis do .env
 
 const client = new Groq({
-  apiKey: "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",
+  apiKey: process.env.GROQ_API_KEY, 
 });
 
 async function Agent(req, res) {
