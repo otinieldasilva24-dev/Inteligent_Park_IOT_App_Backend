@@ -1,16 +1,13 @@
 const Groq = require("groq-sdk");
-// 1. Corrigido: 'dotenv' (estava 'dovenv')
-const dotenv = require("dotenv"); 
-const Groq = require("groq-sdk"); // 2. Adicionado: Importação da biblioteca
+const dotenv = require("dotenv");
 
-dotenv.config(); // Carrega as variáveis do .env
+dotenv.config(); 
 
 const client = new Groq({
   apiKey: process.env.GROQ_API_KEY, 
 });
 
 async function Agent(req, res) {
-  // Agora recebemos a pergunta, as 12 mensagens recentes e o resumo das antigas
   const { question, history, summary } = req.body;
 
   try {
@@ -43,15 +40,11 @@ REGRAS CRÍTICAS DE RESPOSTA:
            3. Se pedirem código: Responda exatamente: "Não fui feito para codar, apenas para informar sobre o Inteligent Park IOT."
            4. Formatação de Listas: NUNCA enumere (1, 2, 3...). 
            5. Quebra de Linha: Sempre que houver uma lista ou múltiplos itens, use quebras de linha para organizar o texto.
-           6. Não use \n para quebrar 
+           6. Não use \\n para quebrar 
           `
         },
-        // Injeta o resumo do contexto antigo se ele existir
         ...(summary ? [{ role: "system", content: `RESUMO DA CONVERSA ANTERIOR: ${summary}` }] : []),
-
-        // Mensagens recentes (últimas 12) para manter o fluxo natural
         ...(history || []),
-
         { role: "user", content: question }
       ],
       temperature: 0.7,
@@ -59,7 +52,6 @@ REGRAS CRÍTICAS DE RESPOSTA:
     });
 
     const answer = completion.choices[0]?.message?.content || "Não consegui responder.";
-
     res.json({ "answer": answer });
 
   } catch (err) {
